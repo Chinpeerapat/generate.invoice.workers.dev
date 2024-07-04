@@ -11,75 +11,119 @@ async function handleRequest(event) {
   })
 
   const pageWidth = doc.internal.pageSize.width
-  const ppi = 3
+  const pageHeight = doc.internal.pageSize.height
+  const margin = 20
 
-  const now = new Date()
-  const dateToday =
-    now.getMonth() + 1 + '/' + now.getDate() + '/' + now.getFullYear()
-
-  const t = {}
   const searchParams = new URL(event.request.url).searchParams
-  const textParams = [
-    'company',
-    'customer',
-    'number',
-    'date',
-    'description',
-    'amount',
-    'total',
-  ]
-  textParams.forEach(param => (t[param] = searchParams.get(param) || ''))
 
-  const docText = (x, y, text) => {
-    if (x > 0) return doc.text(x, y, text)
-    return doc.text(pageWidth + x, y, text, null, null, 'right')
+  // Helper functions
+  const docText = (x, y, text, options = {}) => {
+    const { align = 'left', fontSize = 10, fontStyle = 'normal' } = options
+    doc.setFontSize(fontSize)
+    doc.setFont('helvetica', fontStyle)
+    if (align === 'right') {
+      doc.text(text, pageWidth - margin, y, { align: 'right' })
+    } else {
+      doc.text(text, x, y)
+    }
   }
 
-  const getLines = (text, start, end) =>
-    text
-      .replace(/\\n/g, '\n')
-      .split('\n')
-      .slice(start, end)
+  const wrapText = (text, maxWidth) => {
+    const words = text.split(' ')
+    const lines = []
+    let currentLine = words[0]
 
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(14)
-  docText(20, 24, getLines(t.company || 'Company', 0, 1))
-  docText(-20, 24, t.number ? 'Invoice #' + t.number : 'INVOICE')
-
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(10)
-  doc.setLineHeightFactor(1.3)
-  docText(20, 30, getLines(t.company, 1))
-  docText(-20, 30, t.date || dateToday)
-
-  docText(20, 60, getLines(t.customer || 'Customer', 0))
-
-  doc.setFont('helvetica', 'bold')
-  docText(20, 98, 'Description')
-  doc.text(pageWidth - 20, 98, 'Amount', null, null, 'right')
-
-  doc.setLineWidth(0.333)
-  doc.line(20, 102, pageWidth - 20, 102)
-
-  doc.setFont('helvetica', 'normal')
-  docText(20, 108, t.description || 'Products and services')
-  docText(-20, 108, t.amount || '$1')
-
-  const formatTotal = amount => {
-    let str = (amount + '').replace(/[^0-9\.\,]/g, '')
-    let num = parseFloat(str, 10)
-    if (Math.floor(num) === num) return num + ''
-    return num.toFixed(2)
+    for (let i = 1; i < words.length; i++) {
+      const word = words[i]
+      const width = doc.getStringUnitWidth(currentLine + " " + word) * doc.internal.getFontSize() / doc.internal.scaleFactor
+      if (width < maxWidth) {
+        currentLine += " " + word
+      } else {
+        lines.push(currentLine)
+        currentLine = word
+      }
+    }
+    lines.push(currentLine)
+    return lines
   }
 
-  const totalAmount = t.total || '$' + formatTotal(t.amount || '$1')
-  doc.setFont('helvetica', 'bold')
-  docText(-20, 128, 'Total    ' + totalAmount)
+  // Personal Information
+  docText(margin, 20, searchParams.get('fullName'), { fontSize: 18, fontStyle: 'bold' })
+  docText(margin, 30, searchParams.get('email'))
+  docText(margin, 35, searchParams.get('phone'))
+  docText(margin, 40, searchParams.get('linkedin'))
+  docText(margin, 45, searchParams.get('location'))
+
+  // Summary
+  docText(margin, 55, 'Summary', { fontSize: 14, fontStyle: 'bold' })
+  const summaryLines = wrapText(searchParams.get('summary'), pageWidth - 2 * margin)
+  let yPos = 60
+  summaryLines.forEach(line => {
+    docText(margin, yPos, line)
+    yPos += 5
+  })
+
+  // Areas of Expertise
+  yPos += 5
+  docText(margin, yPos, 'Areas of Expertise', { fontSize: 14, fontStyle: 'bold' })
+  yPos += 5
+  const expertiseItems = searchParams.get('expertise').split(',')
+  expertiseItems.forEach(item => {
+    docText(margin + 5, yPos, '• ' + item.trim())
+    yPos += 5
+  })
+
+  // Professional Experience
+  yPos += 5
+  docText(margin, yPos, 'Professional Experience', { fontSize: 14, fontStyle: 'bold' })
+  yPos += 5
+
+  let expIndex = 1
+  while (searchParams.get(`jobTitle${expIndex}`)) {
+    const jobTitle = searchParams.get(`jobTitle${expIndex}`)
+    const company = searchParams.get(`company${expIndex}`)
+    const startDate = searchParams.get(`startDate${expIndex}`)
+    const endDate = searchParams.get(`endDate${expIndex}`)
+    const description = searchParams.get(`description${expIndex}`)
+
+    docText(margin, yPos, jobTitle, { fontStyle: 'bold' })
+    yPos += 5
+    docText(margin, yPos, `${company} | ${startDate} - ${endDate}`)
+    yPos += 5
+
+    const descLines = wrapText(description, pageWidth - 2 * margin - 10)
+    descLines.forEach(line => {
+      docText(margin + 10, yPos, '• ' + line)
+      yPos += 5
+    })
+
+    yPos += 5
+    expIndex++
+  }
+
+  // Education
+  yPos += 5
+  docText(margin, yPos, 'Education', { fontSize: 14, fontStyle: 'bold' })
+  yPos += 5
+
+  let eduIndex = 1
+  while (searchParams.get(`degree${eduIndex}`)) {
+    const degree = searchParams.get(`degree${eduIndex}`)
+    const university = searchParams.get(`university${eduIndex}`)
+    const eduStartDate = searchParams.get(`eduStartDate${eduIndex}`)
+    const eduEndDate = searchParams.get(`eduEndDate${eduIndex}`)
+
+    docText(margin, yPos, degree, { fontStyle: 'bold' })
+    yPos += 5
+    docText(margin, yPos, `${university} | ${eduStartDate} - ${eduEndDate}`)
+    yPos += 10
+    eduIndex++
+  }
 
   const output = doc.output('arraybuffer')
 
   const headers = new Headers()
-  headers.set('Content-Type', ' application/pdf')
+  headers.set('Content-Type', 'application/pdf')
 
   return new Response(output, { headers })
 }
